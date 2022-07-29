@@ -1,9 +1,10 @@
 package com.skypass.batch.job;
 
-import com.skypass.batch.common.CommonService;
+import com.skypass.batch.common.CommonUtil;
 import com.skypass.batch.usbankCpn.CouponApplicant;
 import com.skypass.batch.usbankCpn.CouponApplicantMethods;
 import com.skypass.batch.usbankCpn.CouponApplicantRepository;
+import com.skypass.batch.usbankCpn.CouponExtractFormat;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
@@ -12,15 +13,20 @@ import org.springframework.batch.core.configuration.annotation.JobBuilderFactory
 import org.springframework.batch.core.configuration.annotation.JobScope;
 import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
 import org.springframework.batch.core.configuration.annotation.StepScope;
+import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.database.JpaCursorItemReader;
 import org.springframework.batch.item.database.builder.JpaCursorItemReaderBuilder;
+import org.springframework.batch.item.file.FlatFileItemWriter;
+import org.springframework.batch.item.file.builder.FlatFileItemWriterBuilder;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.io.FileSystemResource;
 
 import javax.persistence.EntityManagerFactory;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -35,7 +41,7 @@ public class UsbankCouponExportConfiguration {
     private final StepBuilderFactory stepBuilderFactory;
     private final EntityManagerFactory entityManagerFactory;
     private final CouponApplicantRepository couponApplicantRepository;
-    private final CommonService commonUtil;
+    private final CommonUtil commonUtil;
 
     private int chunkSize;
     @Value("${chunkSize:100}")
@@ -54,11 +60,14 @@ public class UsbankCouponExportConfiguration {
     @JobScope
     public Step applicantToCsvStep() {
         return stepBuilderFactory.get("applicantToCsvStep")
-                .<CouponApplicant, CouponApplicant>chunk(chunkSize)
+//                .<CouponApplicant, CouponApplicant>chunk(chunkSize)
+                .<CouponApplicant, CouponExtractFormat>chunk(chunkSize)
                 .reader(applicantsReader(null, null))
-//                .processor(processor())
-                .writer(jpaCursorItemWriter(null, null))
+                .processor(csvFormatProcessor())
+//                .writer(jpaCursorItemWriter(null, null))
+                .writer(csvWriter(null, null))
                 .build();
+
     }
 
     @Bean
@@ -72,6 +81,8 @@ public class UsbankCouponExportConfiguration {
         parameterValues.put("created", created);
         parameterValues.put("cardType", cardType);
 
+        log.info("START : " + LocalDateTime.now());
+
         return new JpaCursorItemReaderBuilder<CouponApplicant>()
                 .name("applicantsReader")
                 .entityManagerFactory(entityManagerFactory)
@@ -83,15 +94,6 @@ public class UsbankCouponExportConfiguration {
                         "and a.transFlg is null")
                 .build();
     }
-//    @Bean
-//    public ItemProcessor<CouponApplicant, String[]> processor() {
-//        log.info(">>>> processor step");
-//        return item -> {
-//            item.updateTransFlg("E");
-//            return new CouponApplicantMethods().couponApplicantToArray(item);
-//        };
-//    }
-
 
     @Bean
     @StepScope
@@ -101,13 +103,54 @@ public class UsbankCouponExportConfiguration {
         CouponApplicantMethods couponApplicantMethods = new CouponApplicantMethods();
         List<String[]> csvLines = new ArrayList<>();
         LocalDateTime created = commonUtil.stringToLocalDateTime(requestDate);
-
+        log.info("OPEN WRITER START : " + LocalDateTime.now());
         return items -> {
-            for (CouponApplicant item: items) {                ;
+            for (CouponApplicant item: items) {
                 csvLines.add(couponApplicantMethods.couponApplicantToArray(item));
             }
-            new CommonService().generateCsvFile(csvLines, "./sample.csv");
-            couponApplicantRepository.updateTransFlag("E", created, cardType);
+            new CommonUtil().generateCsvFileUsingOpenCsv(csvLines, "./sample.csv");
+//            couponApplicantRepository.updateTransFlag("E", created, cardType);
         };
+    }
+
+    @Bean
+    public ItemProcessor<CouponApplicant, CouponExtractFormat> csvFormatProcessor() {
+        log.info(">>>> processor step");
+        return item -> {
+            String ccId = "";
+            switch(item.getCardType()) {
+                case "VB": ccId = "2101LATNAHLYH";
+                    break;
+                case "VX": ccId = "2101LATNAHL6G";
+                    break;
+                case "VZ": ccId = "2101LATNAHLNQ";
+                    break;
+            }
+            return CouponExtractFormat.builder()
+                    .ccId(ccId)
+                    .memberNum(item.getMemberNum())
+                    .custNm("")
+                    .currency("USD")
+                    .cpnAmt(item.getCpnAmt().replaceAll("^0+(?!$)", ""))
+                    .discRate("")
+                    .validStartDate(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd")))
+                    .validEndDate(LocalDateTime.now().plusMonths(1L).format(DateTimeFormatter.ofPattern("yyyyMMdd")))
+                    .build();
+        };
+    }
+
+    @Bean
+    @StepScope
+    public FlatFileItemWriter<CouponExtractFormat> csvWriter(@Value("#{jobParameters[requestDate]}") String requestDate,
+                                                                  @Value("#{jobParameters[cardType]}") String cardType) {
+
+        log.info("WRITER START : " + LocalDateTime.now());
+        return new FlatFileItemWriterBuilder<CouponExtractFormat>()
+                .name("flatFileItemWriter")
+                .resource(new FileSystemResource("./sample_1.csv"))
+                .delimited()
+                .delimiter(",")
+                .names(new String[] {"ccId", "mbrNo", "custNm", "currency", "cpnAmt", "discRate", "validStartDate", "validEndDate"})
+                .build();
     }
 }

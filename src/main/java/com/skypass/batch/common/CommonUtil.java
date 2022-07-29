@@ -2,8 +2,11 @@ package com.skypass.batch.common;
 
 import com.opencsv.CSVWriter;
 import com.opencsv.ICSVWriter;
+import com.skypass.batch.usbankCpn.CouponExtractFormat;
+import org.springframework.batch.item.file.FlatFileItemWriter;
+import org.springframework.batch.item.file.builder.FlatFileItemWriterBuilder;
+import org.springframework.core.io.FileSystemResource;
 import org.springframework.stereotype.Component;
-import org.springframework.stereotype.Service;
 
 import java.io.FileWriter;
 import java.io.IOException;
@@ -12,10 +15,11 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
-@Service
-public class CommonService {
+@Component
+public class CommonUtil {
 
-    public void generateCsvFile(List<String[]> lines, String filePath) throws IOException {
+
+    public void generateCsvFileUsingOpenCsv(List<String[]> lines, String filePath) throws IOException {
 
         CSVWriter writer = new CSVWriter(new FileWriter(filePath), ICSVWriter.DEFAULT_SEPARATOR,
                 ICSVWriter.NO_QUOTE_CHARACTER, ICSVWriter.DEFAULT_ESCAPE_CHARACTER, ICSVWriter.DEFAULT_LINE_END);

@@ -20,12 +20,14 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     compileOnly 'org.projectlombok:lombok'
     runtimeOnly 'com.h2database:h2'
-    runtimeOnly 'com.oracle.database.jdbc:ojdbc6'
+    // https://mvnrepository.com/artifact/oracle/ojdbc6
+//    implementation 'oracle:ojdbc6:11.2.0.3'
+
     annotationProcessor 'org.projectlombok:lombok'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.batch:spring-batch-test'
 
-    // https://mvnrepository.com/artifact/com.opencsv/opencsv
+//     https://mvnrepository.com/artifact/com.opencsv/opencsv
     implementation 'com.opencsv:opencsv:5.6'
 
 }
