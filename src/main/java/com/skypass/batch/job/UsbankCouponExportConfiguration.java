@@ -19,6 +19,7 @@ import org.springframework.batch.item.database.JpaCursorItemReader;
 import org.springframework.batch.item.database.builder.JpaCursorItemReaderBuilder;
 import org.springframework.batch.item.file.FlatFileItemWriter;
 import org.springframework.batch.item.file.builder.FlatFileItemWriterBuilder;
+import org.springframework.batch.repeat.RepeatStatus;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -53,12 +54,14 @@ public class UsbankCouponExportConfiguration {
     public Job usbankCouponJob() {
         return jobBuilderFactory.get("usbankCouponJob")
                 .start(applicantToCsvStep())
+                .next(updateExportFlagStep(null, null))
                 .build();
     }
 
     @Bean
     @JobScope
     public Step applicantToCsvStep() {
+        log.info(">>>> 'applicantToCsvStep' starts...");
         return stepBuilderFactory.get("applicantToCsvStep")
 //                .<CouponApplicant, CouponApplicant>chunk(chunkSize)
                 .<CouponApplicant, CouponExtractFormat>chunk(chunkSize)
@@ -68,6 +71,22 @@ public class UsbankCouponExportConfiguration {
                 .writer(csvWriter(null, null))
                 .build();
 
+    }
+
+    @Bean
+    @JobScope
+    public Step updateExportFlagStep(@Value("#{jobParameters[requestDate]}") String requestDate,
+                                     @Value("#{jobParameters[cardType]}") String cardType) {
+
+        log.info(">>>> 'updateExportFlagStep' starts...");
+
+        LocalDateTime created = commonUtil.stringToLocalDateTime(requestDate);
+        return stepBuilderFactory.get("updateExportFlagStep")
+                .tasklet((contribution, chunkContext) -> {
+                    couponApplicantRepository.updateTransFlag("E", created, cardType);
+                    return RepeatStatus.FINISHED;
+                })
+                .build();
     }
 
     @Bean
@@ -81,7 +100,7 @@ public class UsbankCouponExportConfiguration {
         parameterValues.put("created", created);
         parameterValues.put("cardType", cardType);
 
-        log.info("START : " + LocalDateTime.now());
+        log.info(">>>> 'applicantToCsvStep' - reading Applicants : ");
 
         return new JpaCursorItemReaderBuilder<CouponApplicant>()
                 .name("applicantsReader")
@@ -95,27 +114,27 @@ public class UsbankCouponExportConfiguration {
                 .build();
     }
 
-    @Bean
-    @StepScope
-    public ItemWriter<CouponApplicant> jpaCursorItemWriter(@Value("#{jobParameters[requestDate]}") String requestDate,
-                                                           @Value("#{jobParameters[cardType]}") String cardType) {
-        log.info(">>>> writer step");
-        CouponApplicantMethods couponApplicantMethods = new CouponApplicantMethods();
-        List<String[]> csvLines = new ArrayList<>();
-        LocalDateTime created = commonUtil.stringToLocalDateTime(requestDate);
-        log.info("OPEN WRITER START : " + LocalDateTime.now());
-        return items -> {
-            for (CouponApplicant item: items) {
-                csvLines.add(couponApplicantMethods.couponApplicantToArray(item));
-            }
-            new CommonUtil().generateCsvFileUsingOpenCsv(csvLines, "./sample.csv");
-//            couponApplicantRepository.updateTransFlag("E", created, cardType);
-        };
-    }
+//    @Bean
+//    @StepScope
+//    public ItemWriter<CouponApplicant> jpaCursorItemWriter(@Value("#{jobParameters[requestDate]}") String requestDate,
+//                                                           @Value("#{jobParameters[cardType]}") String cardType) {
+//        log.info(">>>> writer step");
+//        CouponApplicantMethods couponApplicantMethods = new CouponApplicantMethods();
+//        List<String[]> csvLines = new ArrayList<>();
+//        LocalDateTime created = commonUtil.stringToLocalDateTime(requestDate);
+//        log.info("OPEN WRITER START : " + LocalDateTime.now());
+//        return items -> {
+//            for (CouponApplicant item: items) {
+//                csvLines.add(couponApplicantMethods.couponApplicantToArray(item));
+//            }
+//            new CommonUtil().generateCsvFileUsingOpenCsv(csvLines, "./sample.csv");
+////            couponApplicantRepository.updateTransFlag("E", created, cardType);
+//        };
+//    }
 
     @Bean
     public ItemProcessor<CouponApplicant, CouponExtractFormat> csvFormatProcessor() {
-        log.info(">>>> processor step");
+        log.info(">>>> 'applicantToCsvStep' - processing Applicants to the Extract Format");
         return item -> {
             String ccId = "";
             switch(item.getCardType()) {
@@ -144,7 +163,8 @@ public class UsbankCouponExportConfiguration {
     public FlatFileItemWriter<CouponExtractFormat> csvWriter(@Value("#{jobParameters[requestDate]}") String requestDate,
                                                                   @Value("#{jobParameters[cardType]}") String cardType) {
 
-        log.info("WRITER START : " + LocalDateTime.now());
+        log.info(">>>> 'applicantToCsvStep' - writing CSV & export");
+
         return new FlatFileItemWriterBuilder<CouponExtractFormat>()
                 .name("flatFileItemWriter")
                 .resource(new FileSystemResource("./sample_1.csv"))

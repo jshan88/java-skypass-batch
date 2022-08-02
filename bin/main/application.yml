@@ -20,7 +20,7 @@ spring:
     jdbc:
       initialize-schema: never
   datasource:
-      url: jdbc:oracle:thin:@/CRMSTGAPPL
+      url: jdbc:oracle:thin:ffpstgdb1.koreanair.com:2003/CRMSTGAPPL
       username: batuser
-      password:
+      password: kal13ibm
       driver-class-name: oracle.jdbc.driver.OracleDriver
